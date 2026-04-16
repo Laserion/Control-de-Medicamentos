@@ -1,0 +1,6 @@
+{
+  "name": "MedControl",
+  "description": "Una aplicación intuitiva para el control y seguimiento de medicamentos, dosis y reposición.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
