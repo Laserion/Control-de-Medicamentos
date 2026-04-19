@@ -8,6 +8,7 @@ export interface Medication {
   pharmacy: string;
   acquisitionDate: string; // ISO string
   remainingQuantity: number; // units (e.g. pills)
+  isPRN?: boolean; // Pro re nata (as needed/a demanda)
 }
 
 export interface MedicationWithCalc extends Medication {

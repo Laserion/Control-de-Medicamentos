@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, Trash2, ExternalLink, Pill, Calendar as CalendarIcon, AlertCircle, Search, RefreshCw, History, Settings, LayoutDashboard, Clock } from 'lucide-react';
+import { Plus, Trash2, ExternalLink, Pill, Calendar as CalendarIcon, AlertCircle, Search, RefreshCw, History, Settings, LayoutDashboard, Clock, FileDown, Download, CheckCircle2, Circle } from 'lucide-react';
 import { format, addDays, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'motion/react';
@@ -25,7 +25,7 @@ import { Medication, MedicationWithCalc, LogEntry, AppTab } from './types';
 
 const STORAGE_KEY = 'medcontrol_medications';
 const LOGS_KEY = 'medcontrol_logs';
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.3.0';
 
 export default function App() {
   const [medications, setMedications] = useState<Medication[]>([]);
@@ -45,6 +45,7 @@ export default function App() {
     pharmacy: '',
     acquisitionDate: new Date().toISOString(),
     remainingQuantity: 0,
+    isPRN: false,
   });
 
   const [replenishMed, setReplenishMed] = useState<Partial<Medication>>({});
@@ -91,9 +92,11 @@ export default function App() {
 
   const processedMedications = useMemo(() => {
     return medications.map(med => {
-      const dosesPerDay = 24 / med.dosePerHour;
-      const daysRemaining = med.remainingQuantity / dosesPerDay;
-      const replenishmentDate = addDays(new Date(), daysRemaining).toISOString();
+      const dosesPerDay = med.isPRN ? 0 : 24 / med.dosePerHour;
+      const daysRemaining = med.isPRN ? Infinity : med.remainingQuantity / dosesPerDay;
+      const replenishmentDate = med.isPRN 
+        ? new Date(8640000000000000).toISOString() // Far future for PRN
+        : addDays(new Date(), daysRemaining).toISOString();
       
       return {
         ...med,
@@ -108,7 +111,7 @@ export default function App() {
   }, [medications, searchTerm]);
 
   const handleAddMedication = () => {
-    if (!newMed.name || !newMed.dose || !newMed.dosePerHour || newMed.remainingQuantity === undefined) {
+    if (!newMed.name || !newMed.dose || (!newMed.isPRN && !newMed.dosePerHour) || newMed.remainingQuantity === undefined) {
       toast.error('Por favor completa los campos obligatorios');
       return;
     }
@@ -117,12 +120,13 @@ export default function App() {
       id: crypto.randomUUID(),
       name: newMed.name!,
       dose: newMed.dose!,
-      dosePerHour: Number(newMed.dosePerHour),
+      dosePerHour: newMed.isPRN ? 0 : Number(newMed.dosePerHour),
       price: Number(newMed.price) || 0,
       laboratory: newMed.laboratory || 'N/A',
       pharmacy: newMed.pharmacy || 'N/A',
       acquisitionDate: newMed.acquisitionDate || new Date().toISOString(),
       remainingQuantity: Number(newMed.remainingQuantity),
+      isPRN: !!newMed.isPRN,
     };
 
     setMedications([...medications, med]);
@@ -137,8 +141,21 @@ export default function App() {
       pharmacy: '',
       acquisitionDate: new Date().toISOString(),
       remainingQuantity: 0,
+      isPRN: false,
     });
     toast.success('Medicamento añadido correctamente');
+  };
+
+  const togglePRN = (id: string) => {
+    setMedications(medications.map(m => {
+      if (m.id === id) {
+        const newStatus = !m.isPRN;
+        addLog('replenished', m.name, `Control cambiado a ${newStatus ? 'A Demanda' : 'Frecuencia Fija'}.`);
+        return { ...m, isPRN: newStatus, dosePerHour: newStatus ? 0 : (m.dosePerHour || 8) };
+      }
+      return m;
+    }));
+    toast.info('Modo de control actualizado');
   };
 
   const handleDeleteMedication = (id: string) => {
@@ -174,15 +191,72 @@ export default function App() {
     window.open('https://arg.kairosweb.com', '_blank', 'noopener,noreferrer');
   };
 
+  const exportToExcel = () => {
+    const headers = ['Nombre', 'Dosis', 'Frecuencia (Horas)', 'Restante', 'Precio', 'Laboratorio', 'Farmacia', 'Adquisición', 'Modo'];
+    const rows = medications.map(m => [
+      m.name,
+      m.dose,
+      m.isPRN ? 'A Demanda' : `${m.dosePerHour}h`,
+      m.remainingQuantity,
+      m.price,
+      m.laboratory,
+      m.pharmacy,
+      format(parseISO(m.acquisitionDate), "yyyy-MM-dd"),
+      m.isPRN ? 'Ocasional' : 'Fijo'
+    ]);
+
+    const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `MedControl_Export_${format(new Date(), "yyyyMMdd")}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success('Datos exportados a CSV (Excel)');
+  };
+
+  const exportToText = () => {
+    let content = `MEDCONTROL+ - REPORTE DE INVENTARIO\n`;
+    content += `Fecha: ${format(new Date(), "PPP", { locale: es })}\n`;
+    content += `------------------------------------------\n\n`;
+
+    medications.forEach((m, i) => {
+      content += `${i + 1}. ${m.name}\n`;
+      content += `   Dosis: ${m.dose}\n`;
+      content += `   Frecuencia: ${m.isPRN ? 'A Demanda' : `Cada ${m.dosePerHour} horas`}\n`;
+      content += `   Restante: ${m.remainingQuantity} unidades\n`;
+      content += `   Laboratorio: ${m.laboratory}\n`;
+      content += `   Precio: $${m.price}\n`;
+      content += `   Última Adq: ${format(parseISO(m.acquisitionDate), "dd/MM/yyyy")}\n`;
+      content += `------------------------------------------\n`;
+    });
+
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `MedControl_Reporte_${format(new Date(), "yyyyMMdd")}.txt`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success('Reporte generado en texto');
+  };
+
   const medicationsByAgotarse = medications.filter(m => {
+    if (m.isPRN) return m.remainingQuantity < 5; // Alert low quantity for PRN
     const dosesPerDay = 24 / m.dosePerHour;
     const daysRemaining = m.remainingQuantity / dosesPerDay;
     return daysRemaining < 3;
   }).length;
 
   const nextReplenishment = useMemo(() => {
-    if (processedMedications.length === 0) return null;
-    return [...processedMedications].sort((a, b) => a.daysRemaining - b.daysRemaining)[0];
+    const scheduledMeds = processedMedications.filter(m => !m.isPRN);
+    if (scheduledMeds.length === 0) return null;
+    return [...scheduledMeds].sort((a, b) => a.daysRemaining - b.daysRemaining)[0];
   }, [processedMedications]);
 
   const totalMonthlyExpense = medications.reduce((acc, med) => acc + (med.price || 0), 0);
@@ -274,6 +348,29 @@ export default function App() {
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
                   <div className="grid grid-cols-4 items-center gap-4">
+                    <Label className="text-right">Tipo de Control</Label>
+                    <div className="col-span-3 flex items-center gap-4">
+                      <Button
+                        type="button"
+                        variant={newMed.isPRN ? "outline" : "default"}
+                        size="sm"
+                        className="flex-1"
+                        onClick={() => setNewMed({...newMed, isPRN: false})}
+                      >
+                        Frecuencia Fija
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={newMed.isPRN ? "default" : "outline"}
+                        size="sm"
+                        className="flex-1"
+                        onClick={() => setNewMed({...newMed, isPRN: true, dosePerHour: 0})}
+                      >
+                        A Demanda
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="name" className="text-right">Nombre</Label>
                     <Input 
                       id="name" 
@@ -293,18 +390,20 @@ export default function App() {
                       placeholder="Ej: 1 comprimido 600mg"
                     />
                   </div>
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="dosePerHour" className="text-right">Frecuencia</Label>
-                    <div className="col-span-3 flex items-center gap-2">
-                      <Input 
-                        id="dosePerHour" 
-                        type="number"
-                        value={newMed.dosePerHour} 
-                        onChange={e => setNewMed({...newMed, dosePerHour: Number(e.target.value)})}
-                      />
-                      <span className="text-xs text-text-sec whitespace-nowrap">horas</span>
+                  {!newMed.isPRN && (
+                    <div className="grid grid-cols-4 items-center gap-4">
+                      <Label htmlFor="dosePerHour" className="text-right">Frecuencia</Label>
+                      <div className="col-span-3 flex items-center gap-2">
+                        <Input 
+                          id="dosePerHour" 
+                          type="number"
+                          value={newMed.dosePerHour} 
+                          onChange={e => setNewMed({...newMed, dosePerHour: Number(e.target.value)})}
+                        />
+                        <span className="text-xs text-text-sec whitespace-nowrap">horas</span>
+                      </div>
                     </div>
-                  </div>
+                  )}
                   <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="remaining" className="text-right">Cantidad Restante</Label>
                     <Input 
@@ -452,21 +551,34 @@ export default function App() {
                             <span className="font-semibold text-text-main block">{med.name}</span>
                             <span className="text-[11px] text-text-sec block">{med.laboratory} - {med.pharmacy}</span>
                           </div>
-                          <span>{med.dose} / {med.dosePerHour}h</span>
+                          <span>{med.dose} / {med.isPRN ? 'S.O.S' : `${med.dosePerHour}h`}</span>
                           <span>{format(parseISO(med.acquisitionDate), "dd/MM/yy")}</span>
                           <span className="font-medium">{med.remainingQuantity} uds.</span>
                           <span>${med.price.toLocaleString('es-AR')}</span>
                           <div>
                             <span className={cn(
                               "status-pill",
-                              med.daysRemaining < 3 ? "status-alert" : med.daysRemaining < 7 ? "status-warn" : "status-ok"
+                              med.isPRN 
+                                ? (med.remainingQuantity < 5 ? "status-alert" : "status-ok")
+                                : (med.daysRemaining < 3 ? "status-alert" : med.daysRemaining < 7 ? "status-warn" : "status-ok")
                             )}>
-                              {med.daysRemaining < 3 
-                                ? `Reponer en ${Math.ceil(med.daysRemaining)} días` 
-                                : med.daysRemaining < 7 ? "Bajo stock" : "Suficiente"}
+                              {med.isPRN 
+                                ? (med.remainingQuantity < 5 ? "Stock Mínimo" : "Uso Ocasional")
+                                : (med.daysRemaining < 3 
+                                    ? `Reponer en ${Math.ceil(med.daysRemaining)} días` 
+                                    : med.daysRemaining < 7 ? "Bajo stock" : "Suficiente")}
                             </span>
                           </div>
                           <div className="text-right flex items-center justify-end gap-2">
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className={cn("h-8 w-8", med.isPRN ? "text-primary" : "text-text-sec")}
+                              onClick={() => togglePRN(med.id)}
+                              title={med.isPRN ? "Cambiar a Control con Horario" : "Cambiar a Control a Demanda"}
+                            >
+                              {med.isPRN ? <CheckCircle2 className="w-4 h-4" /> : <Circle className="w-4 h-4" />}
+                            </Button>
                             <Button 
                               variant="ghost" 
                               size="icon" 
@@ -600,6 +712,23 @@ export default function App() {
               exit={{ opacity: 0, y: -10 }}
               className="space-y-6"
             >
+              <Card className="border-none shadow-sm">
+                <CardHeader>
+                  <CardTitle>Exportar Datos</CardTitle>
+                  <CardDescription>Descarga una copia de tu inventario actual.</CardDescription>
+                </CardHeader>
+                <CardContent className="flex gap-4">
+                  <Button onClick={exportToExcel} className="bg-green-600 hover:bg-green-700 text-white">
+                    <FileDown className="w-4 h-4 mr-2" />
+                    Exportar a Excel (CSV)
+                  </Button>
+                  <Button onClick={exportToText} variant="outline" className="border-text-main text-text-main">
+                    <Download className="w-4 h-4 mr-2" />
+                    Exportar a Texto
+                  </Button>
+                </CardContent>
+              </Card>
+
               <Card className="border-none shadow-sm">
                 <CardHeader>
                   <CardTitle>Información del Sistema</CardTitle>
