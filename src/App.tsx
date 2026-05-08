@@ -25,7 +25,7 @@ import { Medication, MedicationWithCalc, LogEntry, AppTab } from './types';
 
 const STORAGE_KEY = 'medcontrol_medications';
 const LOGS_KEY = 'medcontrol_logs';
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.4.0';
 
 export default function App() {
   const [medications, setMedications] = useState<Medication[]>([]);
