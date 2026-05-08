@@ -15,6 +15,7 @@ export interface MedicationWithCalc extends Medication {
   dosesPerDay: number;
   daysRemaining: number;
   replenishmentDate: string;
+  estimatedQuantity: number;
 }
 
 export interface LogEntry {

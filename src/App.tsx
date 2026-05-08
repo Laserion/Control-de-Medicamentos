@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { Plus, Trash2, ExternalLink, Pill, Calendar as CalendarIcon, AlertCircle, Search, RefreshCw, History, Settings, LayoutDashboard, Clock, FileDown, Download, CheckCircle2, Circle } from 'lucide-react';
-import { format, addDays, parseISO } from 'date-fns';
+import { format, addDays, parseISO, differenceInHours } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -91,18 +91,28 @@ export default function App() {
   };
 
   const processedMedications = useMemo(() => {
+    const now = new Date();
     return medications.map(med => {
+      let estimatedQuantity = med.remainingQuantity;
+      
+      if (!med.isPRN && med.dosePerHour > 0) {
+        const hoursPassed = differenceInHours(now, parseISO(med.acquisitionDate));
+        const dosesTaken = Math.floor(hoursPassed / med.dosePerHour);
+        estimatedQuantity = Math.max(0, med.remainingQuantity - dosesTaken);
+      }
+
       const dosesPerDay = med.isPRN ? 0 : 24 / med.dosePerHour;
-      const daysRemaining = med.isPRN ? Infinity : med.remainingQuantity / dosesPerDay;
+      const daysRemaining = med.isPRN ? Infinity : estimatedQuantity / dosesPerDay;
       const replenishmentDate = med.isPRN 
         ? new Date(8640000000000000).toISOString() // Far future for PRN
-        : addDays(new Date(), daysRemaining).toISOString();
+        : addDays(now, daysRemaining).toISOString();
       
       return {
         ...med,
         dosesPerDay,
         daysRemaining,
         replenishmentDate,
+        estimatedQuantity,
       } as MedicationWithCalc;
     }).filter(med => 
       med.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -156,6 +166,40 @@ export default function App() {
       return m;
     }));
     toast.info('Modo de control actualizado');
+  };
+
+  const handleTakeDose = (id: string) => {
+    setMedications(medications.map(m => {
+      if (m.id === id) {
+        const newQuantity = Math.max(0, m.remainingQuantity - 1);
+        addLog('replenished', m.name, `Se descontó 1 dosis manualmente. Restan ${newQuantity} unidades.`);
+        return { 
+          ...m, 
+          remainingQuantity: newQuantity,
+          // If we manually take a dose, we don't necessarily update acquisitionDate 
+          // because the automatic calculation would shift.
+          // Actually, for PRN it's fine. For Fixed Frequency, it resets the "timer" for auto-deduction.
+          acquisitionDate: new Date().toISOString() 
+        };
+      }
+      return m;
+    }));
+    toast.success('Dosis registrada');
+  };
+
+  const handleSyncStock = (id: string, estimated: number) => {
+    setMedications(medications.map(m => {
+      if (m.id === id) {
+        addLog('replenished', m.name, `Stock sincronizado. Se estableció en ${estimated} unidades.`);
+        return { 
+          ...m, 
+          remainingQuantity: estimated,
+          acquisitionDate: new Date().toISOString() 
+        };
+      }
+      return m;
+    }));
+    toast.success('Inventario sincronizado');
   };
 
   const handleDeleteMedication = (id: string) => {
@@ -247,9 +291,17 @@ export default function App() {
   };
 
   const medicationsByAgotarse = medications.filter(m => {
-    if (m.isPRN) return m.remainingQuantity < 5; // Alert low quantity for PRN
+    const now = new Date();
+    let estimatedQuantity = m.remainingQuantity;
+    if (!m.isPRN && m.dosePerHour > 0) {
+      const hoursPassed = differenceInHours(now, parseISO(m.acquisitionDate));
+      const dosesTaken = Math.floor(hoursPassed / m.dosePerHour);
+      estimatedQuantity = Math.max(0, m.remainingQuantity - dosesTaken);
+    }
+
+    if (m.isPRN) return estimatedQuantity < 5; 
     const dosesPerDay = 24 / m.dosePerHour;
-    const daysRemaining = m.remainingQuantity / dosesPerDay;
+    const daysRemaining = estimatedQuantity / dosesPerDay;
     return daysRemaining < 3;
   }).length;
 
@@ -521,11 +573,11 @@ export default function App() {
 
               {/* Meds Container */}
               <section className="bg-white rounded-xl border border-border flex flex-col overflow-hidden shadow-sm">
-                <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_120px] px-6 py-4 border-b-2 border-bg text-[11px] uppercase text-text-sec font-bold">
+                <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_140px] px-6 py-4 border-b-2 border-bg text-[11px] uppercase text-text-sec font-bold">
                   <span>Medicamento / Laboratorio</span>
                   <span>Dosis</span>
                   <span>Adquirido</span>
-                  <span>Restante</span>
+                  <span>Stock Actual</span>
                   <span>Precio</span>
                   <span>Estado</span>
                   <span className="text-right">Acciones</span>
@@ -545,7 +597,7 @@ export default function App() {
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 1 }}
                           exit={{ opacity: 0 }}
-                          className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_120px] px-6 py-4 border-b border-border items-center text-[13px] hover:bg-bg/30 transition-colors"
+                          className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_140px] px-6 py-4 border-b border-border items-center text-[13px] hover:bg-bg/30 transition-colors"
                         >
                           <div>
                             <span className="font-semibold text-text-main block">{med.name}</span>
@@ -553,23 +605,48 @@ export default function App() {
                           </div>
                           <span>{med.dose} / {med.isPRN ? 'S.O.S' : `${med.dosePerHour}h`}</span>
                           <span>{format(parseISO(med.acquisitionDate), "dd/MM/yy")}</span>
-                          <span className="font-medium">{med.remainingQuantity} uds.</span>
+                          <div className="flex flex-col">
+                            <span className="font-bold text-primary">{Math.floor(med.estimatedQuantity)} uds.</span>
+                            {med.estimatedQuantity !== med.remainingQuantity && (
+                              <span className="text-[10px] text-text-sec line-through">Nominal: {med.remainingQuantity}</span>
+                            )}
+                          </div>
                           <span>${med.price.toLocaleString('es-AR')}</span>
                           <div>
                             <span className={cn(
                               "status-pill",
                               med.isPRN 
-                                ? (med.remainingQuantity < 5 ? "status-alert" : "status-ok")
+                                ? (med.estimatedQuantity < 5 ? "status-alert" : "status-ok")
                                 : (med.daysRemaining < 3 ? "status-alert" : med.daysRemaining < 7 ? "status-warn" : "status-ok")
                             )}>
                               {med.isPRN 
-                                ? (med.remainingQuantity < 5 ? "Stock Mínimo" : "Uso Ocasional")
+                                ? (med.estimatedQuantity < 5 ? "Stock Mínimo" : "Uso Ocasional")
                                 : (med.daysRemaining < 3 
                                     ? `Reponer en ${Math.ceil(med.daysRemaining)} días` 
                                     : med.daysRemaining < 7 ? "Bajo stock" : "Suficiente")}
                             </span>
                           </div>
-                          <div className="text-right flex items-center justify-end gap-2">
+                          <div className="text-right flex items-center justify-end gap-1">
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8 text-blue-600 hover:bg-blue-50"
+                              onClick={() => handleTakeDose(med.id)}
+                              title="Registrar toma de 1 dosis"
+                            >
+                              <Pill className="w-3.5 h-3.5" />
+                            </Button>
+                            {med.estimatedQuantity !== med.remainingQuantity && (
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="h-8 w-8 text-green-600 hover:bg-green-50"
+                                onClick={() => handleSyncStock(med.id, med.estimatedQuantity)}
+                                title="Sincronizar stock real con estimado"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                              </Button>
+                            )}
                             <Button 
                               variant="ghost" 
                               size="icon" 
@@ -577,7 +654,7 @@ export default function App() {
                               onClick={() => togglePRN(med.id)}
                               title={med.isPRN ? "Cambiar a Control con Horario" : "Cambiar a Control a Demanda"}
                             >
-                              {med.isPRN ? <CheckCircle2 className="w-4 h-4" /> : <Circle className="w-4 h-4" />}
+                              {med.isPRN ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Circle className="w-3.5 h-3.5" />}
                             </Button>
                             <Button 
                               variant="ghost" 
@@ -589,7 +666,7 @@ export default function App() {
                               }}
                               title="Reiniciar estado / Reponer"
                             >
-                              <RefreshCw className="w-4 h-4" />
+                              <RefreshCw className="w-3.5 h-3.5" />
                             </Button>
                             <Button 
                               variant="ghost" 
@@ -597,7 +674,7 @@ export default function App() {
                               className="h-8 w-8 text-text-sec hover:text-danger hover:bg-danger/10"
                               onClick={() => handleDeleteMedication(med.id)}
                             >
-                              <Trash2 className="w-4 h-4" />
+                              <Trash2 className="w-3.5 h-3.5" />
                             </Button>
                           </div>
                         </motion.div>
