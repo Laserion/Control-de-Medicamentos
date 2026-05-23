@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, Trash2, ExternalLink, Pill, Calendar as CalendarIcon, AlertCircle, Search, RefreshCw, History, Settings, LayoutDashboard, Clock, FileDown, Download, CheckCircle2, Circle } from 'lucide-react';
+import { Plus, Trash2, ExternalLink, Pill, Calendar as CalendarIcon, AlertCircle, Search, RefreshCw, History, Settings, LayoutDashboard, Clock, FileDown, Download, CheckCircle2, Circle, Menu, X } from 'lucide-react';
 import { format, addDays, parseISO, differenceInHours } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'motion/react';
@@ -25,12 +25,13 @@ import { Medication, MedicationWithCalc, LogEntry, AppTab } from './types';
 
 const STORAGE_KEY = 'medcontrol_medications';
 const LOGS_KEY = 'medcontrol_logs';
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.5.0';
 
 export default function App() {
   const [medications, setMedications] = useState<Medication[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [activeTab, setActiveTab] = useState<AppTab>('inventario');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isReplenishDialogOpen, setIsReplenishDialogOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -314,9 +315,108 @@ export default function App() {
   const totalMonthlyExpense = medications.reduce((acc, med) => acc + (med.price || 0), 0);
 
   return (
-    <div className="flex h-screen bg-bg text-text-main font-sans overflow-hidden">
-      {/* Sidebar */}
-      <nav className="w-64 bg-white border-r border-border p-8 flex flex-col gap-8 shrink-0">
+    <div className="flex h-screen bg-bg text-text-main font-sans overflow-hidden relative">
+      {/* Mobile Sidebar (Slide-over drawer) */}
+      <AnimatePresence>
+        {isSidebarOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.4 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsSidebarOpen(false)}
+              className="fixed inset-0 bg-black/50 z-40 md:hidden"
+            />
+            {/* Side Panel */}
+            <motion.nav
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 220 }}
+              className="fixed top-0 left-0 bottom-0 w-64 bg-white p-6 flex flex-col gap-8 z-50 shadow-2xl md:hidden"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-[20px] font-bold text-primary tracking-tighter">
+                  <Pill className="w-5 h-5" />
+                  MedControl<span className="font-light">+</span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-text-sec hover:bg-bg"
+                  onClick={() => setIsSidebarOpen(false)}
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+              
+              <div className="flex flex-col gap-1">
+                <button 
+                  onClick={() => {
+                    setActiveTab('inventario');
+                    setIsSidebarOpen(false);
+                  }}
+                  className={cn("nav-item flex items-center gap-3 text-left w-full", activeTab === 'inventario' && "active")}
+                >
+                  <LayoutDashboard className="w-4 h-4" />
+                  Inventario
+                </button>
+                <button 
+                  onClick={() => {
+                    setActiveTab('cronograma');
+                    setIsSidebarOpen(false);
+                  }}
+                  className={cn("nav-item flex items-center gap-3 text-left w-full", activeTab === 'cronograma' && "active")}
+                >
+                  <Clock className="w-4 h-4" />
+                  Cronograma
+                </button>
+                <button 
+                  onClick={() => {
+                    setActiveTab('historial');
+                    setIsSidebarOpen(false);
+                  }}
+                  className={cn("nav-item flex items-center gap-3 text-left w-full", activeTab === 'historial' && "active")}
+                >
+                  <History className="w-4 h-4" />
+                  Historial
+                </button>
+                <button 
+                  onClick={() => {
+                    setActiveTab('configuracion');
+                    setIsSidebarOpen(false);
+                  }}
+                  className={cn("nav-item flex items-center gap-3 text-left w-full", activeTab === 'configuracion' && "active")}
+                >
+                  <Settings className="w-4 h-4" />
+                  Configuración
+                </button>
+              </div>
+              
+              <div className="mt-auto space-y-4">
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    openKairos();
+                    setIsSidebarOpen(false);
+                  }}
+                  className="w-full border-primary text-primary hover:bg-primary/5 font-semibold text-xs py-2 h-9"
+                >
+                  <ExternalLink className="w-3.5 h-3.5 mr-2" />
+                  Consultar Kairos
+                </Button>
+                <div className="text-[10px] text-text-sec text-center uppercase tracking-widest font-bold opacity-50">
+                  Version {APP_VERSION}
+                </div>
+              </div>
+            </motion.nav>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Desktop Sidebar (Permanent) */}
+      <nav className="hidden md:flex w-64 bg-white border-r border-border p-8 flex flex-col gap-8 shrink-0">
         <div className="flex items-center gap-2 text-[22px] font-bold text-primary tracking-tighter mb-5">
           <Pill className="w-6 h-6" />
           MedControl<span className="font-light">+</span>
@@ -368,21 +468,31 @@ export default function App() {
       </nav>
 
       {/* Main Content */}
-      <main className="flex-1 p-10 flex flex-col gap-6 overflow-y-auto">
-        <header className="flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold capitalize">
-              {activeTab === 'inventario' ? 'Mi Inventario' : 
-               activeTab === 'cronograma' ? 'Cronograma de Reposición' : 
-               activeTab === 'historial' ? 'Historial de Actividad' : 
-               'Configuración'}
-            </h1>
-            <p className="text-text-sec text-sm">
-              {activeTab === 'inventario' && `Control actual de ${medications.length} medicamentos`}
-              {activeTab === 'cronograma' && 'Ordenado por urgencia de reposición'}
-              {activeTab === 'historial' && 'Registro de las últimas acciones realizadas'}
-              {activeTab === 'configuracion' && 'Ajustes y detalles del sistema'}
-            </p>
+      <main className="flex-1 p-4 md:p-10 flex flex-col gap-6 overflow-y-auto">
+        <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div className="flex items-center gap-3">
+            <Button 
+              variant="outline" 
+              size="icon" 
+              onClick={() => setIsSidebarOpen(true)}
+              className="md:hidden h-10 w-10 text-text-sec bg-white hover:bg-bg transition-colors"
+            >
+              <Menu className="w-5 h-5" />
+            </Button>
+            <div>
+              <h1 className="text-xl md:text-2xl font-bold capitalize">
+                {activeTab === 'inventario' ? 'Mi Inventario' : 
+                 activeTab === 'cronograma' ? 'Cronograma de Reposición' : 
+                 activeTab === 'historial' ? 'Historial de Actividad' : 
+                 'Configuración'}
+              </h1>
+              <p className="text-text-sec text-xs md:text-sm">
+                {activeTab === 'inventario' && `Control actual de ${medications.length} medicamentos`}
+                {activeTab === 'cronograma' && 'Ordenado por urgencia de reposición'}
+                {activeTab === 'historial' && 'Registro de las últimas acciones realizadas'}
+                {activeTab === 'configuracion' && 'Ajustes y detalles del sistema'}
+              </p>
+            </div>
           </div>
           
           {activeTab === 'inventario' && (
@@ -572,21 +682,126 @@ export default function App() {
               </div>
 
               {/* Meds Container */}
-              <section className="bg-white rounded-xl border border-border flex flex-col overflow-hidden shadow-sm">
-                <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_140px] px-6 py-4 border-b-2 border-bg text-[11px] uppercase text-text-sec font-bold">
-                  <span>Medicamento / Laboratorio</span>
-                  <span>Dosis</span>
-                  <span>Adquirido</span>
-                  <span>Stock Actual</span>
-                  <span>Precio</span>
-                  <span>Estado</span>
-                  <span className="text-right">Acciones</span>
+              <section className="bg-transparent lg:bg-white rounded-xl lg:border lg:border-border flex flex-col overflow-hidden lg:shadow-sm">
+                
+                {/* Desktop View (Grid/Table) */}
+                <div className="hidden lg:flex flex-col">
+                  <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_140px] px-6 py-4 border-b-2 border-bg text-[11px] uppercase text-text-sec font-bold">
+                    <span>Medicamento / Laboratorio</span>
+                    <span>Dosis</span>
+                    <span>Adquirido</span>
+                    <span>Stock Actual</span>
+                    <span>Precio</span>
+                    <span>Estado</span>
+                    <span className="text-right">Acciones</span>
+                  </div>
+
+                  <div className="flex flex-col">
+                    <AnimatePresence mode="popLayout">
+                      {processedMedications.length === 0 ? (
+                        <div className="p-10 text-center text-text-sec text-sm">
+                          No se encontraron medicamentos.
+                        </div>
+                      ) : (
+                        processedMedications.map((med) => (
+                          <motion.div
+                            key={med.id}
+                            layout
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_140px] px-6 py-4 border-b border-border items-center text-[13px] hover:bg-bg/30 transition-colors"
+                          >
+                            <div>
+                              <span className="font-semibold text-text-main block">{med.name}</span>
+                              <span className="text-[11px] text-text-sec block">{med.laboratory} - {med.pharmacy}</span>
+                            </div>
+                            <span>{med.dose} / {med.isPRN ? 'S.O.S' : `${med.dosePerHour}h`}</span>
+                            <span>{format(parseISO(med.acquisitionDate), "dd/MM/yy")}</span>
+                            <div className="flex flex-col">
+                              <span className="font-bold text-primary">{Math.floor(med.estimatedQuantity)} uds.</span>
+                              {med.estimatedQuantity !== med.remainingQuantity && (
+                                <span className="text-[10px] text-text-sec line-through">Nominal: {med.remainingQuantity}</span>
+                              )}
+                            </div>
+                            <span>${med.price.toLocaleString('es-AR')}</span>
+                            <div>
+                              <span className={cn(
+                                "status-pill",
+                                med.isPRN 
+                                  ? (med.estimatedQuantity < 5 ? "status-alert" : "status-ok")
+                                  : (med.daysRemaining < 3 ? "status-alert" : med.daysRemaining < 7 ? "status-warn" : "status-ok")
+                              )}>
+                                {med.isPRN 
+                                  ? (med.estimatedQuantity < 5 ? "Stock Mínimo" : "Uso Ocasional")
+                                  : (med.daysRemaining < 3 
+                                      ? `Reponer en ${Math.ceil(med.daysRemaining)} días` 
+                                      : med.daysRemaining < 7 ? "Bajo stock" : "Suficiente")}
+                              </span>
+                            </div>
+                            <div className="text-right flex items-center justify-end gap-1">
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="h-8 w-8 text-blue-600 hover:bg-blue-50"
+                                onClick={() => handleTakeDose(med.id)}
+                                title="Registrar toma de 1 dosis"
+                              >
+                                <Pill className="w-3.5 h-3.5" />
+                              </Button>
+                              {med.estimatedQuantity !== med.remainingQuantity && (
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  className="h-8 w-8 text-green-600 hover:bg-green-50"
+                                  onClick={() => handleSyncStock(med.id, med.estimatedQuantity)}
+                                  title="Sincronizar stock real con estimado"
+                                >
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                </Button>
+                              )}
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className={cn("h-8 w-8", med.isPRN ? "text-primary" : "text-text-sec")}
+                                onClick={() => togglePRN(med.id)}
+                                title={med.isPRN ? "Cambiar a Control con Horario" : "Cambiar a Control a Demanda"}
+                              >
+                                {med.isPRN ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Circle className="w-3.5 h-3.5" />}
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="h-8 w-8 text-primary hover:bg-primary/10"
+                                onClick={() => {
+                                  setReplenishMed(med);
+                                  setIsReplenishDialogOpen(true);
+                                }}
+                                title="Reiniciar estado / Reponer"
+                              >
+                                <RefreshCw className="w-3.5 h-3.5" />
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="h-8 w-8 text-text-sec hover:text-danger hover:bg-danger/10"
+                                onClick={() => handleDeleteMedication(med.id)}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </Button>
+                            </div>
+                          </motion.div>
+                        ))
+                      )}
+                    </AnimatePresence>
+                  </div>
                 </div>
 
-                <div className="flex flex-col">
+                {/* Mobile View (Cards) */}
+                <div className="lg:hidden flex flex-col gap-4">
                   <AnimatePresence mode="popLayout">
                     {processedMedications.length === 0 ? (
-                      <div className="p-10 text-center text-text-sec text-sm">
+                      <div className="p-10 text-center text-text-sec text-sm bg-white rounded-xl border border-border">
                         No se encontraron medicamentos.
                       </div>
                     ) : (
@@ -594,27 +809,18 @@ export default function App() {
                         <motion.div
                           key={med.id}
                           layout
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_140px] px-6 py-4 border-b border-border items-center text-[13px] hover:bg-bg/30 transition-colors"
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -10 }}
+                          className="bg-white rounded-xl border border-border p-4 shadow-sm flex flex-col gap-3.5"
                         >
-                          <div>
-                            <span className="font-semibold text-text-main block">{med.name}</span>
-                            <span className="text-[11px] text-text-sec block">{med.laboratory} - {med.pharmacy}</span>
-                          </div>
-                          <span>{med.dose} / {med.isPRN ? 'S.O.S' : `${med.dosePerHour}h`}</span>
-                          <span>{format(parseISO(med.acquisitionDate), "dd/MM/yy")}</span>
-                          <div className="flex flex-col">
-                            <span className="font-bold text-primary">{Math.floor(med.estimatedQuantity)} uds.</span>
-                            {med.estimatedQuantity !== med.remainingQuantity && (
-                              <span className="text-[10px] text-text-sec line-through">Nominal: {med.remainingQuantity}</span>
-                            )}
-                          </div>
-                          <span>${med.price.toLocaleString('es-AR')}</span>
-                          <div>
+                          <div className="flex justify-between items-start gap-4">
+                            <div>
+                              <span className="font-bold text-[15px] text-text-main block leading-snug">{med.name}</span>
+                              <span className="text-[11px] text-text-sec mt-0.5 block">{med.laboratory} - {med.pharmacy}</span>
+                            </div>
                             <span className={cn(
-                              "status-pill",
+                              "status-pill text-[10px] py-1 px-2.5 shrink-0",
                               med.isPRN 
                                 ? (med.estimatedQuantity < 5 ? "status-alert" : "status-ok")
                                 : (med.daysRemaining < 3 ? "status-alert" : med.daysRemaining < 7 ? "status-warn" : "status-ok")
@@ -622,60 +828,91 @@ export default function App() {
                               {med.isPRN 
                                 ? (med.estimatedQuantity < 5 ? "Stock Mínimo" : "Uso Ocasional")
                                 : (med.daysRemaining < 3 
-                                    ? `Reponer en ${Math.ceil(med.daysRemaining)} días` 
-                                    : med.daysRemaining < 7 ? "Bajo stock" : "Suficiente")}
+                                    ? `Reponer en ${Math.ceil(med.daysRemaining)} d` 
+                                    : med.daysRemaining < 7 ? "Bajo" : "Suficiente")}
                             </span>
                           </div>
-                          <div className="text-right flex items-center justify-end gap-1">
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="h-8 w-8 text-blue-600 hover:bg-blue-50"
-                              onClick={() => handleTakeDose(med.id)}
-                              title="Registrar toma de 1 dosis"
-                            >
-                              <Pill className="w-3.5 h-3.5" />
-                            </Button>
-                            {med.estimatedQuantity !== med.remainingQuantity && (
+
+                          <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs p-3 bg-bg/40 rounded-lg">
+                            <div>
+                              <span className="text-[10px] text-text-sec block uppercase font-bold tracking-tight">Dosis</span>
+                              <span className="font-semibold text-text-main mt-0.5 block">{med.dose}</span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-text-sec block uppercase font-bold tracking-tight">Frecuencia</span>
+                              <span className="font-semibold text-text-main mt-0.5 block">{med.isPRN ? 'A Demanda' : `${med.dosePerHour}h`}</span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-text-sec block uppercase font-bold tracking-tight">Stock Actual</span>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <span className="font-black text-primary text-[13px]">{Math.floor(med.estimatedQuantity)} uds.</span>
+                                {med.estimatedQuantity !== med.remainingQuantity && (
+                                  <span className="text-[9px] text-text-sec line-through">({med.remainingQuantity})</span>
+                                )}
+                              </div>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-text-sec block uppercase font-bold tracking-tight">Adquirido</span>
+                              <span className="font-semibold text-text-main mt-0.5 block">{format(parseISO(med.acquisitionDate), "dd/MM/yy")}</span>
+                            </div>
+                          </div>
+
+                          <div className="flex justify-between items-center pt-2 border-t border-border/50">
+                            <span className="text-sm font-bold text-text-main">${med.price.toLocaleString('es-AR')}</span>
+                            <div className="flex items-center gap-1.5">
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                className="h-8 px-2.5 text-[11px] font-semibold text-blue-600 border-blue-200 hover:bg-blue-50/50 flex items-center gap-1"
+                                onClick={() => handleTakeDose(med.id)}
+                                title="Registrar toma de 1 dosis"
+                              >
+                                <Pill className="w-3.5 h-3.5" />
+                                Tomar
+                              </Button>
+                              {med.estimatedQuantity !== med.remainingQuantity && (
+                                <Button 
+                                  variant="outline" 
+                                  size="sm" 
+                                  className="h-8 px-2 text-[11px] font-semibold text-green-600 border-green-200 hover:bg-green-50/50 flex items-center gap-1"
+                                  onClick={() => handleSyncStock(med.id, med.estimatedQuantity)}
+                                  title="Sincronizar stock real"
+                                >
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  Sinc
+                                </Button>
+                              )}
                               <Button 
                                 variant="ghost" 
                                 size="icon" 
-                                className="h-8 w-8 text-green-600 hover:bg-green-50"
-                                onClick={() => handleSyncStock(med.id, med.estimatedQuantity)}
-                                title="Sincronizar stock real con estimado"
+                                className={cn("h-8 w-8 hover:bg-bg/50", med.isPRN ? "text-primary bg-primary/5" : "text-text-sec")}
+                                onClick={() => togglePRN(med.id)}
+                                title={med.isPRN ? "Cambiar a Control con Horario" : "Cambiar a Control a Demanda"}
                               >
-                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                {med.isPRN ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Circle className="w-3.5 h-3.5" />}
                               </Button>
-                            )}
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className={cn("h-8 w-8", med.isPRN ? "text-primary" : "text-text-sec")}
-                              onClick={() => togglePRN(med.id)}
-                              title={med.isPRN ? "Cambiar a Control con Horario" : "Cambiar a Control a Demanda"}
-                            >
-                              {med.isPRN ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Circle className="w-3.5 h-3.5" />}
-                            </Button>
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="h-8 w-8 text-primary hover:bg-primary/10"
-                              onClick={() => {
-                                setReplenishMed(med);
-                                setIsReplenishDialogOpen(true);
-                              }}
-                              title="Reiniciar estado / Reponer"
-                            >
-                              <RefreshCw className="w-3.5 h-3.5" />
-                            </Button>
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="h-8 w-8 text-text-sec hover:text-danger hover:bg-danger/10"
-                              onClick={() => handleDeleteMedication(med.id)}
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="h-8 w-8 text-primary hover:bg-primary/10 bg-primary/5"
+                                onClick={() => {
+                                  setReplenishMed(med);
+                                  setIsReplenishDialogOpen(true);
+                                }}
+                                title="Reiniciar estado / Reponer"
+                              >
+                                <RefreshCw className="w-3.5 h-3.5" />
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="h-8 w-8 text-text-sec hover:text-danger hover:bg-danger/10"
+                                onClick={() => handleDeleteMedication(med.id)}
+                                title="Eliminar"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </Button>
+                            </div>
                           </div>
                         </motion.div>
                       ))
@@ -683,7 +920,10 @@ export default function App() {
                   </AnimatePresence>
                 </div>
 
-                <div className="p-5 text-center text-text-sec text-[13px] border-t border-border">
+                <div className="p-5 text-center text-text-sec text-[13px] border-t border-border bg-white rounded-b-xl hidden lg:block">
+                  Mostrando {processedMedications.length} de {medications.length} medicamentos.
+                </div>
+                <div className="p-3 text-center text-text-sec text-[12px] lg:hidden">
                   Mostrando {processedMedications.length} de {medications.length} medicamentos.
                 </div>
               </section>
@@ -739,45 +979,47 @@ export default function App() {
               exit={{ opacity: 0, y: -10 }}
               className="bg-white rounded-xl border border-border overflow-hidden shadow-sm"
             >
-              <Table>
-                <TableHeader className="bg-bg/50">
-                  <TableRow>
-                    <TableHead>Fecha y Hora</TableHead>
-                    <TableHead>Acción</TableHead>
-                    <TableHead>Medicamento</TableHead>
-                    <TableHead>Detalles</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {logs.length === 0 ? (
+              <div className="overflow-x-auto w-full">
+                <Table>
+                  <TableHeader className="bg-bg/50">
                     <TableRow>
-                      <TableCell colSpan={4} className="h-32 text-center text-text-sec">
-                        No hay actividad registrada aún.
-                      </TableCell>
+                      <TableHead>Fecha y Hora</TableHead>
+                      <TableHead>Acción</TableHead>
+                      <TableHead>Medicamento</TableHead>
+                      <TableHead>Detalles</TableHead>
                     </TableRow>
-                  ) : (
-                    logs.map(log => (
-                      <TableRow key={log.id}>
-                        <TableCell className="text-xs text-text-sec">
-                          {format(parseISO(log.timestamp), "Pp", { locale: es })}
+                  </TableHeader>
+                  <TableBody>
+                    {logs.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="h-32 text-center text-text-sec">
+                          No hay actividad registrada aún.
                         </TableCell>
-                        <TableCell>
-                          <span className={cn(
-                            "px-2 py-0.5 rounded text-[10px] font-bold uppercase",
-                            log.action === 'added' && "bg-blue-100 text-blue-700",
-                            log.action === 'deleted' && "bg-red-100 text-red-700",
-                            log.action === 'replenished' && "bg-green-100 text-green-700"
-                          )}>
-                            {log.action === 'added' ? 'Añadido' : log.action === 'deleted' ? 'Eliminado' : 'Repuesto'}
-                          </span>
-                        </TableCell>
-                        <TableCell className="font-medium">{log.medicationName}</TableCell>
-                        <TableCell className="text-sm text-text-sec">{log.details}</TableCell>
                       </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
+                    ) : (
+                      logs.map(log => (
+                        <TableRow key={log.id}>
+                          <TableCell className="text-xs text-text-sec">
+                            {format(parseISO(log.timestamp), "Pp", { locale: es })}
+                          </TableCell>
+                          <TableCell>
+                            <span className={cn(
+                              "px-2 py-0.5 rounded text-[10px] font-bold uppercase",
+                              log.action === 'added' && "bg-blue-100 text-blue-700",
+                              log.action === 'deleted' && "bg-red-100 text-red-700",
+                              log.action === 'replenished' && "bg-green-100 text-green-700"
+                            )}>
+                              {log.action === 'added' ? 'Añadido' : log.action === 'deleted' ? 'Eliminado' : 'Repuesto'}
+                            </span>
+                          </TableCell>
+                          <TableCell className="font-medium">{log.medicationName}</TableCell>
+                          <TableCell className="text-sm text-text-sec">{log.details}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
             </motion.div>
           )}
 
@@ -794,7 +1036,7 @@ export default function App() {
                   <CardTitle>Exportar Datos</CardTitle>
                   <CardDescription>Descarga una copia de tu inventario actual.</CardDescription>
                 </CardHeader>
-                <CardContent className="flex gap-4">
+                <CardContent className="flex flex-col sm:flex-row gap-4">
                   <Button onClick={exportToExcel} className="bg-green-600 hover:bg-green-700 text-white">
                     <FileDown className="w-4 h-4 mr-2" />
                     Exportar a Excel (CSV)
